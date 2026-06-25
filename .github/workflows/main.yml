@@ -1,0 +1,55 @@
+name: 🖥️ Action VPS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  vps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+
+    steps:
+      - name: 🔧 System Setup
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y openssh-server curl wget net-tools neofetch tmux tmux
+
+      - name: 👤 Create User
+        run: |
+          sudo useradd -m -s /bin/bash vpsuser
+          echo "vpsuser:vps@2026xyz" | sudo chpasswd
+          sudo usermod -aG sudo vpsuser
+          echo "vpsuser ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/vpsuser
+
+      - name: 🔐 Configure SSH
+        run: |
+          sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+          sudo sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+          echo "PermitRootLogin yes" | sudo tee -a /etc/ssh/sshd_config
+          echo "PasswordAuthentication yes" | sudo tee -a /etc/ssh/sshd_config
+          sudo service ssh start || sudo systemctl start ssh
+
+      - name: 🌐 Cloudflare Tunnel
+        run: |
+          curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
+          chmod +x cloudflared
+          sudo mv cloudflared /usr/local/bin/
+          cloudflared tunnel --url ssh://localhost:22 > /tmp/cf.log 2>&1 &
+          sleep 10
+
+          CF_URL=$(grep -oP 'https://[a-zA-Z0-9\-]+\.trycloudflare\.com' /tmp/cf.log | head -1)
+          HOST=$(echo $CF_URL | sed 's/https:\/\///')
+
+          echo "╔════════════════════════════════════════════╗"
+          echo "║           🚀 VPS LOGIN DETAILS             ║"
+          echo "╠════════════════════════════════════════════╣"
+          echo "║ 🌐 URL      : $CF_URL"
+          echo "║ 👤 Username : vpsuser"
+          echo "║ 🔑 Password : vps@2026xyz"
+          echo "╠════════════════════════════════════════════╣"
+          echo "║ 💻 Termux CMD:"
+          echo "║ ssh -o ProxyCommand='cloudflared access ssh --hostname $HOST' vpsuser@$HOST"
+          echo "╚════════════════════════════════════════════╝"
+
+      - name: ⏳ Keep Alive
+        run: sleep 18000
